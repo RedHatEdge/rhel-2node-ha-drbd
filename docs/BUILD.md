@@ -151,6 +151,63 @@ below.
 
 ---
 
+## Using Ansible directly instead of make
+
+`make` is a thin wrapper. Every target runs an ordinary playbook, and you can run
+them yourself if you prefer — nothing in this repository requires make.
+
+What the wrapper does add is worth knowing before you skip it:
+
+- **A pinned toolchain.** `make venv` builds a virtualenv from `requirements.txt`
+  (`ansible-core>=2.16,<2.20`) and installs the collections into `./collections`,
+  deliberately never touching system Python. Run playbooks with a distro Ansible
+  and you get whatever version it ships, against collections that may not match.
+- **The flags that matter.** `00-substrate.yml` reconfigures host networking
+  according to `storage_backend`, so running it with the wrong value against a
+  live cluster reconfigures the storage NIC underneath a running system — while
+  reporting success. The make targets pin the value for you. If you call the
+  playbooks directly, pass it yourself and pass it correctly.
+
+Activate the virtualenv first so you get the pinned Ansible:
+
+```
+make venv                      # once
+source .venv/bin/activate
+```
+
+Run from the repository root — `ansible.cfg` there supplies the inventory path,
+the roles path and the collections path, so the commands below need no `-i`.
+
+Then each target maps to:
+
+| make | ansible-playbook |
+|---|---|
+| `make discover` | `ansible-playbook playbooks/01-discover.yml` |
+| `make substrate` | `ansible-playbook playbooks/00-substrate.yml -e storage_backend=drbd -e fence_backend=redfish` |
+| `make admin` | `… playbooks/00-substrate.yml -e storage_backend=drbd -e fence_backend=redfish --tags admin` |
+| `make drbd` | `… playbooks/20-storage-drbd.yml -e storage_backend=drbd` |
+| `make guests` | `… playbooks/30-guests.yml -e storage_backend=drbd` |
+
+`FENCE` defaults to `redfish`; override with `make substrate FENCE=ipmilan` or by
+changing `-e fence_backend=`.
+
+The image build is not Ansible at all — `bootc/build.sh` is a shell script and is
+run directly either way.
+
+Useful additions when running playbooks by hand:
+
+```
+--check --diff        # dry run, show what would change
+--limit node1         # one host
+--tags admin          # one part of a play
+-v                    # or -vvv when something is not doing what you expect
+```
+
+`--check` is worth knowing about: several plays in here are destructive by
+design, and a dry run tells you which tasks would fire before they do.
+
+---
+
 ## A. Networks
 
 | segment | example subnet | carries |
