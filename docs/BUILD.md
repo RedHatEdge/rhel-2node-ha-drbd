@@ -22,8 +22,9 @@ different switches.
 ## B. Install the two nodes
 
 ```
-make image          # RHEL 9 bootc container image
-make iso            # -> installer ISO
+cd bootc
+./build.sh                 # RHEL 9 bootc container image
+./build.sh --push --iso    # build, push, then make an installer ISO
 ```
 
 One ISO installs both nodes. The kickstart matches each machine's own MACs against
@@ -100,8 +101,30 @@ Ubuntu cloud images, one per node, as `ocf:heartbeat:VirtualDomain` resources �
 not `libvirt-guests`, which is all-or-nothing and gives Pacemaker no per-VM health
 signal or placement control.
 
-Live migration needs three things, each of which fails silently on its own —
-Pacemaker simply falls back to stop-and-start and reports healthy:
+### Live migration is not available with this storage layer
+
+Measure this expectation before you set it with anyone. Single-primary DRBD
+mounts the replicated filesystem on **one node at a time**, so the migration
+target cannot open the guest's disk and libvirt refuses outright:
+
+```
+error: Unsafe migration: Migration without shared storage is unsafe
+```
+
+Pacemaker then falls back to stop-and-start, so the guest does move — it simply
+reboots to get there. Measured on this configuration, a planned move cost about
+**12 seconds** of guest downtime, against roughly 15 seconds for an unplanned
+node loss. No timeout or tuning changes this; it is a property of the
+architecture, not a misconfiguration.
+
+If genuine live migration is a requirement, DRBD needs `allow-two-primaries`
+plus a cluster filesystem (GFS2) so both nodes can mount concurrently. That adds
+DLM and `lvmlockd` to every node and makes fencing correctness load-bearing
+rather than merely important — a materially heavier design than this one, and
+out of scope here.
+
+The role still configures the three prerequisites below, because they are needed
+for any future move to a shared-storage layer and each fails silently on its own:
 
 - **SSH host keys** trusted between the nodes, as root
 - **A unique libvirt host UUID.** libvirt derives it from the DMI system UUID, and
@@ -111,9 +134,6 @@ Pacemaker simply falls back to stop-and-start and reports healthy:
   one image, every site would hit this.
 - **Ports 49152-49215** open, or migration authenticates, starts, then fails with
   "no route to host"
-
-All three are handled by the role. They are listed because if you build this by
-hand you will hit them, and none announces itself.
 
 ## F. Verify
 
@@ -126,7 +146,7 @@ pcs quorum status          # 3 votes
 Then test what you actually care about:
 
 ```
-pcs node standby node1     # planned maintenance — should live-migrate
+pcs node standby node1     # planned maintenance — guest restarts, ~12s
 pcs stonith fence node1    # unplanned loss — should fence and recover
 ```
 
@@ -142,7 +162,7 @@ node1, node2   RHEL 9, KVM, Pacemaker, three-vote quorum, BMC fencing
                vgstore: lv-store-a, lv-store-b
                DRBD protocol C, cross-primary
 arbiter        corosync-qnetd
-guests         one per node, Pacemaker-managed, live-migratable
+guests         one per node, Pacemaker-managed (cold move only — see above)
 ```
 
 No shared storage array, no appliance in the data path, and every component in
