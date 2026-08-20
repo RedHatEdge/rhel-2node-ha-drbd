@@ -3,7 +3,8 @@
 #   make venv        create .venv and install pinned deps + collections
 #   make ping        connectivity check against the inventory
 #   make discover    gather hardware, write inventory/host_vars
-#   make substrate   cluster, quorum, fencing, KVM  (both options need this)
+#   make substrate   cluster, quorum, fencing, KVM
+#   make admin       admin account + Cockpit only (safe on a live cluster)
 #   make drbd        replicated storage under Pacemaker
 #   make guests      workload guests on the replicated volumes
 #   make status      pcs status from node1
@@ -41,8 +42,24 @@ ping: venv
 discover: venv
 	$(PLAYBOOK) playbooks/01-discover.yml
 
+# storage_backend is passed explicitly and pinned to this repository's backend.
+#
+# It is not cosmetic. The substrate play configures host networking and attaches
+# the storage NIC according to storage_backend -- DRBD does not need the storage NIC bridged.
+# Leaving it to a default means one wrong value silently reconfigures the
+# storage network out from under a running cluster: bridge torn down, address
+# moved to the physical NIC, every path dropped, and the play still reports
+# success. Pin it.
 substrate: venv
-	$(PLAYBOOK) playbooks/00-substrate.yml -e fence_backend=$(FENCE)
+	$(PLAYBOOK) playbooks/00-substrate.yml \
+	  -e storage_backend=drbd -e fence_backend=$(FENCE)
+
+# Operator access only -- the admin account and Cockpit. Touches no networking,
+# so it is safe against a live cluster. Prefer this over a full substrate run
+# when that is all you need.
+admin: venv
+	$(PLAYBOOK) playbooks/00-substrate.yml \
+	  -e storage_backend=drbd -e fence_backend=$(FENCE) --tags admin
 
 drbd: venv
 	$(PLAYBOOK) playbooks/20-storage-drbd.yml -e storage_backend=drbd
