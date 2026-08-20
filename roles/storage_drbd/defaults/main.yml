@@ -1,0 +1,29 @@
+---
+# Option B — two DRBD resources with OPPOSITE primaries.
+#
+# A single resource with one Primary is active/passive and would strand half
+# the store's compute. Two resources, each preferring a different node, gives
+# both nodes real work while keeping exactly one writer per filesystem.
+# No dual-primary, no cluster filesystem, no Resilient Storage subscription.
+
+drbd_vg: vgstore
+drbd_port_base: 7788
+drbd_fs_type: xfs
+
+# Percentage of the VG each resource gets. Leave headroom for snapshots.
+drbd_lv_size: 45%VG
+
+drbd_resources:
+  - name: store-a
+    minor: 0
+    lv: lv-store-a
+    home_node: node1
+    mount: /var/store-a
+  - name: store-b
+    minor: 1
+    lv: lv-store-b
+    home_node: node2
+    mount: /var/store-b
+
+# Set true only when you intend to destroy existing DRBD metadata.
+drbd_force_recreate: false

@@ -1,0 +1,33 @@
+resource {{ res.name }} {
+  protocol C;                     # synchronous — write acked only after both copies
+
+  disk {
+    on-io-error detach;
+    fencing resource-and-stonith;
+  }
+
+  handlers {
+    fence-peer          "/usr/lib/drbd/crm-fence-peer.9.sh";
+    after-resync-target "/usr/lib/drbd/crm-unfence-peer.9.sh";
+  }
+
+  net {
+    max-buffers 16384;
+    max-epoch-size 16384;
+    verify-alg crc32c;
+  }
+
+  on {{ node1_name }} {
+    device   /dev/drbd{{ res.minor }};
+    disk     /dev/{{ drbd_vg }}/{{ res.lv }};
+    address  {{ hostvars[node1_name].repl_ip }}:{{ drbd_port_base + res.minor }};
+    meta-disk internal;
+  }
+
+  on {{ node2_name }} {
+    device   /dev/drbd{{ res.minor }};
+    disk     /dev/{{ drbd_vg }}/{{ res.lv }};
+    address  {{ hostvars[node2_name].repl_ip }}:{{ drbd_port_base + res.minor }};
+    meta-disk internal;
+  }
+}

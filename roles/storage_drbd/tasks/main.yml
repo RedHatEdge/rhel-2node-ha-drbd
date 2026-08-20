@@ -1,0 +1,283 @@
+---
+# ---------------------------------------------------------------- packages
+# ELRepo is fine for a lab. Production needs LINBIT-supported packages:
+# per Red Hat solution 32085, LINBIT supports DRBD, Red Hat supports RHEL, and
+# the two teams work joint escalations. Kernel drivers come from LINBIT, so
+# every kernel erratum needs a matching DRBD build.
+- name: Import ELRepo GPG key
+  ansible.builtin.rpm_key:
+    key: https://www.elrepo.org/RPM-GPG-KEY-elrepo.org
+    state: present
+  when: not is_bootc | bool
+
+- name: Install ELRepo release
+  ansible.builtin.dnf:
+    name: https://www.elrepo.org/elrepo-release-9.el9.elrepo.noarch.rpm
+    state: present
+    disable_gpg_check: false
+  when: not is_bootc | bool
+
+- name: Install DRBD
+  ansible.builtin.dnf:
+    name:
+      - kmod-drbd9x
+      - drbd9x-utils
+    state: present
+  when: not is_bootc | bool
+
+- name: Load and persist the DRBD module
+  community.general.modprobe:
+    name: drbd
+    state: present
+    persistent: present
+
+# Safety net for package-mode hosts, and for images built before the relabel
+# below was added to the Containerfile. See the comment there for why: ELRepo
+# ships the OCF agent labelled drbd_exec_t, so pacemaker-execd runs it in the
+# drbd_t domain where it cannot write the cluster log, and every start fails in
+# ~50 ms with a permission error that never mentions SELinux.
+- name: Ensure the DRBD OCF agent is labelled as an ordinary executable
+  ansible.builtin.shell: |
+    set -o pipefail
+    cur=$(ls -Z /usr/lib/ocf/resource.d/linbit/drbd 2>/dev/null | awk '{print $1}')
+    case "$cur" in
+      *:bin_t:*) echo unchanged ;;
+      *) chcon -t bin_t /usr/lib/ocf/resource.d/linbit/drbd && echo relabelled ;;
+    esac
+  args:
+    executable: /bin/bash
+  register: _drbd_label
+  changed_when: "'relabelled' in _drbd_label.stdout"
+  failed_when: false
+
+- name: Report if the agent could not be relabelled
+  ansible.builtin.debug:
+    msg: >
+      Could not relabel the DRBD OCF agent (/usr is read-only under bootc).
+      Rebuild the image so the relabel is baked in, or run
+      `semanage permissive -a drbd_t` as a temporary measure.
+  when: _drbd_label.rc | default(0) != 0
+
+# ------------------------------------------------------------------- safety
+- name: Confirm the storage device exists
+  ansible.builtin.stat:
+    path: "{{ storage_device }}"
+  register: _dev
+
+- name: Fail if the storage device is missing
+  ansible.builtin.assert:
+    that: _dev.stat.exists
+    fail_msg: >
+      {{ storage_device }} not found on {{ inventory_hostname }}.
+      Set storage_device in host_vars — do not guess. Check: lsblk
+
+- name: Refuse to touch a mounted device
+  ansible.builtin.shell: |
+    set -o pipefail
+    lsblk -no MOUNTPOINT {{ storage_device }} | grep -v '^$' || true
+  args:
+    executable: /bin/bash
+  register: _mounted
+  changed_when: false
+
+- name: Abort if the device has mounted filesystems
+  ansible.builtin.assert:
+    that: _mounted.stdout | trim | length == 0
+    fail_msg: "{{ storage_device }} has mounted filesystems: {{ _mounted.stdout }}"
+
+# ---------------------------------------------------------------------- LVM
+# DRBD sits on LVs, not a whole disk. That allows lvextend + drbdadm resize,
+# separate volumes per resource, and snapshots.
+- name: Create the volume group
+  community.general.lvg:
+    vg: "{{ drbd_vg }}"
+    pvs: "{{ storage_device }}"
+    state: present
+
+- name: Create a logical volume per DRBD resource
+  community.general.lvol:
+    vg: "{{ drbd_vg }}"
+    lv: "{{ item.lv }}"
+    size: "{{ drbd_lv_size }}"
+    state: present
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.lv }}"
+
+# ----------------------------------------------------------------- firewall
+- name: Open DRBD replication ports
+  ansible.posix.firewalld:
+    port: "{{ drbd_port_base + item.minor }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# ---------------------------------------------------------------- resources
+- name: Install DRBD resource definitions
+  ansible.builtin.template:
+    src: resource.res.j2
+    dest: "/etc/drbd.d/{{ res.name }}.res"
+    mode: "0644"
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    loop_var: res
+    label: "{{ res.name }}"
+
+# Idempotency here is subtle. `drbdadm dump-md` only works on a resource that
+# is DOWN; against a running one it returns "Device or resource busy" (rc 20),
+# which naively reads as "no metadata" and leads to create-md being run over a
+# live, syncing device. Check whether the resource is UP first, and only fall
+# back to dump-md when it is not.
+- name: Check whether each resource is already running
+  ansible.builtin.command: "drbdadm status {{ item.name }}"
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: _up_check
+  changed_when: false
+  failed_when: false
+
+- name: Check for on-disk metadata (only meaningful when the resource is down)
+  ansible.builtin.command: "drbdadm dump-md {{ item.item.name }}"
+  loop: "{{ _up_check.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.rc != 0
+  register: _md_check
+  changed_when: false
+  failed_when: false
+
+- name: Decide which resources need metadata created
+  ansible.builtin.set_fact:
+    _needs_md: >-
+      {{ _up_check.results
+         | selectattr('rc', 'ne', 0) | map(attribute='item.name') | list
+         | intersect(
+             (_md_check.results | default([]))
+             | rejectattr('skipped', 'defined')
+             | selectattr('rc', 'ne', 0) | map(attribute='item.item.name') | list
+           ) }}
+
+- name: Report what will be touched
+  ansible.builtin.debug:
+    msg: |
+      already running : {{ _up_check.results | selectattr('rc','eq',0) | map(attribute='item.name') | list }}
+      needs metadata  : {{ _needs_md }}
+      {{ 'Nothing to initialise - existing resources are left alone.' if _needs_md | length == 0 else '' }}
+
+- name: Create DRBD metadata
+  ansible.builtin.command: "drbdadm create-md --force {{ item }}"
+  loop: "{{ _needs_md }}"
+  when: _needs_md | length > 0
+  changed_when: true
+
+# Only bring up what is actually down. Running `drbdadm up` against a live
+# resource fails with "Minor or volume exists already" (rc 1), which is not a
+# real error but does abort the play.
+- name: Bring down DRBD resources up
+  ansible.builtin.command: "drbdadm up {{ item.item.name }}"
+  loop: "{{ _up_check.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.rc != 0
+  register: _up
+  changed_when: _up.rc | default(0) == 0
+  failed_when: _up.rc | default(0) not in [0, 17]
+
+- name: Force initial sync source for newly created resources only
+  ansible.builtin.command: "drbdadm primary --force {{ item }}"
+  loop: "{{ _needs_md }}"
+  when:
+    - _needs_md | length > 0
+    - inventory_hostname == node1_name
+  changed_when: true
+
+- name: Wait for both resources to connect
+  ansible.builtin.shell: |
+    set -o pipefail
+    drbdadm status {{ item.name }} | grep -q 'peer-disk:' && \
+    drbdadm status {{ item.name }} | grep -q 'disk:UpToDate'
+  args:
+    executable: /bin/bash
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: _conn
+  until: _conn.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+  when: inventory_hostname == node1_name
+
+- name: Report initial sync progress
+  ansible.builtin.shell: "drbdadm status"
+  args:
+    executable: /bin/bash
+  register: _syncstat
+  changed_when: false
+  when: inventory_hostname == node1_name
+
+- name: Sync status
+  ansible.builtin.debug:
+    msg: |
+      {{ _syncstat.stdout }}
+
+      The initial sync continues in the background. The Primary is already
+      UpToDate and usable; the Secondary is Inconsistent until it completes.
+      Track it with:  watch drbdadm status
+  when: inventory_hostname == node1_name
+
+# Check for a filesystem directly rather than inferring it from metadata
+# state — that is what we actually care about, and it stays correct however the
+# resource got here.
+- name: Check for a filesystem on each DRBD device
+  ansible.builtin.command: "blkid -o value -s TYPE /dev/drbd{{ item.minor }}"
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: _fscheck
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == node1_name
+
+- name: Create filesystems where none exists
+  community.general.filesystem:
+    fstype: "{{ drbd_fs_type }}"
+    dev: "/dev/drbd{{ item.item.minor }}"
+  loop: "{{ _fscheck.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name | default('') }}"
+  when:
+    - inventory_hostname == node1_name
+    - item.rc | default(1) != 0 or (item.stdout | default('')) == ''
+
+- name: Create mount points on both nodes
+  ansible.builtin.file:
+    path: "{{ item.mount }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.mount }}"
+
+# Hand control to Pacemaker — it owns promotion and mounting from here.
+#
+# ONLY when we brought DRBD up ourselves. If Pacemaker is already managing these
+# resources, taking them down here tears down a working cluster on every re-run,
+# which then has to resync. _needs_md is non-empty exactly when this run created
+# the metadata, i.e. this is first-time setup.
+- name: Take DRBD down so Pacemaker can manage it
+  ansible.builtin.command: "drbdadm down {{ item.name }}"
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: _needs_md | length > 0
+  changed_when: true
+  failed_when: false
+
+- name: Configure Pacemaker resources
+  ansible.builtin.include_tasks: pacemaker.yml
+  run_once: true

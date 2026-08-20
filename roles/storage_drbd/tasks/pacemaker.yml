@@ -1,0 +1,109 @@
+---
+# Pacemaker resources for Option B.
+#
+# Per resource:
+#   drbd-<name>        promotable clone, promoted-max=1  (one Primary)
+#   fs-<name>          Filesystem, colocated with the Promoted role
+#   location prefers   pins each resource's Primary to a different node
+#
+# Result: node1 Primary for store-a, node2 Primary for store-b. Active/active
+# across the pair, single-writer per filesystem.
+
+- name: Create DRBD promotable resources
+  ansible.builtin.command: >
+    pcs resource create drbd-{{ item.name }} ocf:linbit:drbd
+    drbd_resource={{ item.name }}
+    op monitor interval=29s role=Promoted
+    op monitor interval=31s role=Unpromoted
+    promotable promoted-max=1 promoted-node-max=1
+    clone-max=2 clone-node-max=1 notify=true
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  delegate_to: "{{ node1_name }}"
+  register: _r1
+  changed_when: _r1.rc == 0
+  failed_when: _r1.rc not in [0, 1]
+
+- name: Create filesystem resources
+  ansible.builtin.command: >
+    pcs resource create fs-{{ item.name }} ocf:heartbeat:Filesystem
+    device=/dev/drbd{{ item.minor }}
+    directory={{ item.mount }}
+    fstype={{ drbd_fs_type }}
+    op monitor interval=20s
+    op start timeout=60s op stop timeout=60s
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  delegate_to: "{{ node1_name }}"
+  register: _r2
+  changed_when: _r2.rc == 0
+  failed_when: _r2.rc not in [0, 1]
+
+- name: Colocate each filesystem with its Promoted DRBD instance
+  ansible.builtin.command: >
+    pcs constraint colocation add fs-{{ item.name }}
+    with Promoted drbd-{{ item.name }}-clone INFINITY
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  delegate_to: "{{ node1_name }}"
+  register: _r3
+  changed_when: _r3.rc == 0
+  failed_when: _r3.rc not in [0, 1]
+
+- name: Order promotion before mount
+  ansible.builtin.command: >
+    pcs constraint order promote drbd-{{ item.name }}-clone
+    then start fs-{{ item.name }} INFINITY
+  loop: "{{ drbd_resources }}"
+  loop_control:
+    label: "{{ item.name }}"
+  delegate_to: "{{ node1_name }}"
+  register: _r4
+  changed_when: _r4.rc == 0
+  failed_when: _r4.rc not in [0, 1]
+
+# This is what makes it active/active rather than active/passive — and the
+# scope matters. A plain `location <clone> prefers <node>` places clone
+# INSTANCES, and with clone-max=2 on a two-node cluster both instances run
+# everywhere anyway, so it has no effect on which node holds the Primary. The
+# constraint has to be scoped to the Promoted role to steer promotion.
+#
+# Without this both resources promote on whichever node happens to win, and the
+# cluster silently degrades to active/passive while still looking healthy.
+- name: Steer each resource's Primary to its home node
+  ansible.builtin.command: >
+    pcs constraint location {{ item.rsc }} rule role=Promoted score=100
+    #uname eq {{ item.node }}
+  loop:
+    - { rsc: "drbd-store-a-clone", node: "{{ node1_name }}" }
+    - { rsc: "drbd-store-b-clone", node: "{{ node2_name }}" }
+  loop_control:
+    label: "{{ item.rsc }} -> {{ item.node }}"
+  delegate_to: "{{ node1_name }}"
+  register: _promo
+  changed_when: _promo.rc == 0
+  failed_when: _promo.rc not in [0, 1]
+
+# DRBD refuses to promote an Inconsistent replica, so during the initial sync a
+# resource stays Primary wherever it started regardless of this constraint. It
+# migrates on its own once the peer reaches UpToDate. That is correct behaviour,
+# not a failure — the cluster is simply not yet able to honour the preference.
+
+- name: Wait for the cluster to settle
+  ansible.builtin.command: crm_resource --wait
+  delegate_to: "{{ node1_name }}"
+  changed_when: false
+  failed_when: false
+
+- name: Show cluster status
+  ansible.builtin.command: pcs status
+  register: _st
+  delegate_to: "{{ node1_name }}"
+  changed_when: false
+
+- name: Report
+  ansible.builtin.debug:
+    var: _st.stdout_lines
