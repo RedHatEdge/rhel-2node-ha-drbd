@@ -1,0 +1,71 @@
+---
+# Label the DRBD OCF resource agent as an ordinary executable.
+#
+# Pacemaker runs /usr/lib/ocf/resource.d/linbit/drbd, and the package ships it
+# labelled drbd_exec_t. Executed from Pacemaker that transitions the process into
+# drbd_t, which is a domain for the DRBD daemon -- not for a shell script that has
+# to call crm_attribute and write to the cluster log. The result is a stream of
+# AVC denials:
+#
+#   avc: denied { connectto } comm="crm_attribute"
+#        scontext=system_u:system_r:drbd_t:s0
+#        tcontext=system_u:system_r:cluster_t:s0
+#
+# drbd_t ships as a permissive domain, so these are logged rather than enforced
+# and the agent still works. That is worse than it sounds: the noise hides real
+# denials, and it stops being harmless the moment the domain is made enforcing.
+#
+# The agent is a script Pacemaker invokes; bin_t is what it should be.
+#
+# On an IMAGE-MODE host this cannot be fixed at runtime: /usr is read-only, and
+# restorecon fails with "Read-only file system". The label has to come from the
+# image, and it does -- the `semanage fcontext` rule in the Containerfile is
+# applied when the image is deployed and the filesystem relabelled. The chcon in
+# the build is not the mechanism and is not required; a node carrying the rule
+# comes up correctly labelled without it.
+#
+# So on image mode this task VERIFIES and reports. A node showing the packaged
+# drbd_exec_t label is a node running an image built before the rule was added,
+# and the fix is a rebuild plus `bootc upgrade`, not anything done in place.
+# On a package-mode host the relabel is possible and is performed.
+
+- name: Record the OCF agent's file context
+  community.general.sefcontext:
+    target: '/usr/lib/ocf/resource\.d/linbit/drbd'
+    setype: bin_t
+    state: present
+  register: _drbd_fcontext
+  failed_when: false
+
+- name: Check the agent's current label
+  ansible.builtin.command: ls -Z /usr/lib/ocf/resource.d/linbit/drbd
+  register: _drbd_label
+  changed_when: false
+  failed_when: false
+
+- name: Relabel the agent when it does not match
+  ansible.builtin.command: restorecon -F /usr/lib/ocf/resource.d/linbit/drbd
+  when:
+    - _drbd_label.rc == 0
+    - "'bin_t' not in _drbd_label.stdout"
+    - not (is_bootc | bool)          # /usr is read-only on image mode
+  register: _relabelled
+  failed_when: false
+
+- name: Confirm the label took
+  ansible.builtin.command: ls -Z /usr/lib/ocf/resource.d/linbit/drbd
+  register: _drbd_after
+  changed_when: false
+  failed_when: false
+
+- name: Report the agent's label
+  ansible.builtin.debug:
+    msg: >-
+      DRBD OCF agent is {{ 'correctly labelled bin_t'
+                           if 'bin_t' in (_drbd_after.stdout | default(''))
+                           else 'mislabelled (' ~ (_drbd_after.stdout | default('unknown')) ~ ').'
+                                ~ (' This host is image-mode, so /usr is read-only and it cannot be'
+                                   ~ ' relabelled in place -- it is running an image built before the'
+                                   ~ ' fcontext rule was added. Rebuild and bootc upgrade.'
+                                   if (is_bootc | bool)
+                                   else ' Relabel attempted.') }}

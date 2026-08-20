@@ -116,6 +116,14 @@
     label: "{{ item.name }}"
 
 # ---------------------------------------------------------------- resources
+# Label the OCF agent before Pacemaker starts calling it.
+- name: Correct the DRBD agent's SELinux label
+  ansible.builtin.include_tasks:
+    file: selinux.yml
+    apply:
+      tags: [selinux]
+  tags: [selinux]
+
 - name: Install DRBD resource definitions
   ansible.builtin.template:
     src: resource.res.j2
