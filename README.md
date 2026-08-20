@@ -34,6 +34,11 @@ Two DRBD resources, each Primary on a different node. Both hosts carry productio
 workload; neither is an idle standby. Either can run both guests during a failure
 or a maintenance window.
 
+**Architecture diagram:** [`docs/diagrams/drbd-architecture.png`](docs/diagrams/drbd-architecture.png)
+— both hosts, the two replicated volumes, and which node is Primary for each.
+[`drbd-live-migration.png`](docs/diagrams/drbd-live-migration.png) covers the one
+constraint worth knowing before you design around this.
+
 ## Why three votes
 
 A two-node cluster cannot distinguish "my peer is dead" from "my peer cannot hear

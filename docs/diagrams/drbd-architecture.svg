@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="820" viewBox="0 0 1240 820" role="img" aria-label="Two RHEL 9 hosts replicating two LVM volumes to each other with DRBD protocol C. store-a is Primary on node1 and store-b is Primary on node2, so both hosts carry live workload. A third RHEL host runs corosync-qnetd as the deciding vote."><rect width="1240" height="820" fill="#ffffff"/>
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+      </marker>
+    </defs>
+
+    <rect x="410" y="16" width="420" height="96" rx="4" fill="#fafafa" stroke="#5752d1" stroke-width="1.5"/>
+    <text x="430" y="42" font-family="var(--mono)" font-size="12" fill="#3c3d99" letter-spacing="1.2">DATACENTER &#183; RHEL 9 ARBITER</text>
+    <text x="430" y="66" font-family="var(--mono)" font-size="14" fill="#151515">qnetd1 &#183; 172.16.7.20</text>
+    <text x="430" y="90" font-family="var(--mono)" font-size="12.5" fill="#4d4d4d">corosync-qnetd :5403 &#8212; the third vote</text>
+    <text x="430" y="105" font-family="var(--mono)" font-size="11" fill="#6a6e73">no storage role &#8212; DRBD needs no appliance, no witness</text>
+
+    <path d="M470 112 L176 190" stroke="#5752d1" stroke-width="1.4" stroke-dasharray="6 4" fill="none"/>
+    <path d="M770 112 L1064 190" stroke="#5752d1" stroke-width="1.4" stroke-dasharray="6 4" fill="none"/>
+    <text x="176" y="160" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#3c3d99">cluster quorum</text>
+    <text x="1064" y="160" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#3c3d99">cluster quorum</text>
+
+    <rect x="26" y="190" width="452" height="580" rx="4" fill="#ffffff" stroke="#ee0000" stroke-width="2"/>
+    <text x="48" y="220" font-family="var(--display)" font-size="17" fill="#a30000">RHEL 9.8 HOST &#183; node1</text>
+    <text x="48" y="242" font-family="var(--mono)" font-size="12" fill="#6a6e73">172.16.7.10</text>
+
+    <rect x="48" y="258" width="408" height="92" rx="3" fill="#fafafa" stroke="#d2d2d2"/>
+    <text x="64" y="282" font-family="var(--display)" font-size="14.5" fill="#151515">guest &#183; pos</text>
+    <text x="64" y="304" font-family="var(--mono)" font-size="12" fill="#4d4d4d">/var/store-a/pos.qcow2</text>
+    <text x="64" y="324" font-family="var(--mono)" font-size="11" fill="#6a6e73">ocf:heartbeat:VirtualDomain</text>
+    <text x="64" y="342" font-family="var(--mono)" font-size="11" fill="#795600">store-a is Primary here</text>
+
+    <rect x="48" y="364" width="408" height="60" rx="3" fill="#ffffff" stroke="#0066cc" stroke-width="1.5"/>
+    <text x="64" y="388" font-family="var(--mono)" font-size="12.5" fill="#004b95">XFS on /dev/drbd0 &#8594; /var/store-a</text>
+    <text x="64" y="408" font-family="var(--mono)" font-size="11" fill="#6a6e73">mounted on the Primary side ONLY</text>
+
+    <rect x="48" y="438" width="408" height="84" rx="3" fill="#fafafa" stroke="#f0ab00" stroke-width="1.5"/>
+    <text x="64" y="462" font-family="var(--display)" font-size="14" fill="#795600">DRBD &#183; store-a &#8212; PRIMARY</text>
+    <text x="64" y="484" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">/dev/drbd0 &#8592; lv-store-a &#183; 429 G</text>
+    <text x="64" y="504" font-family="var(--mono)" font-size="11" fill="#6a6e73">store-b here is Secondary &#183; kernel module</text>
+
+    <rect x="48" y="536" width="408" height="112" rx="3" fill="#fafafa" stroke="#d2d2d2"/>
+    <text x="64" y="560" font-family="var(--display)" font-size="14" fill="#151515">LVM &#183; vgstore &#183; 953.87 GB</text>
+    <rect x="64" y="572" width="180" height="42" rx="3" fill="#ffffff" stroke="#f0ab00"/>
+    <text x="76" y="590" font-family="var(--mono)" font-size="11.5" fill="#795600">lv-store-a</text>
+    <text x="76" y="606" font-family="var(--mono)" font-size="11" fill="#6a6e73">429 G &#183; Primary</text>
+    <rect x="260" y="572" width="180" height="42" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="272" y="590" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">lv-store-b</text>
+    <text x="272" y="606" font-family="var(--mono)" font-size="11" fill="#6a6e73">429 G &#183; Secondary</text>
+    <text x="64" y="636" font-family="var(--mono)" font-size="11" fill="#6a6e73">NVMe 953 GB &#183; /dev/disk/by-id</text>
+
+    <rect x="48" y="662" width="196" height="82" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="60" y="684" font-family="var(--mono)" font-size="11.5" fill="#151515">enp2s0 &#183; 172.16.7.10</text>
+    <text x="60" y="702" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">management</text>
+    <text x="60" y="718" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">corosync ring0 &#183; br-lan</text>
+    <text x="60" y="734" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">guests attach here</text>
+
+    <rect x="260" y="662" width="196" height="82" rx="3" fill="#ffffff" stroke="#0066cc" stroke-width="1.5"/>
+    <text x="272" y="684" font-family="var(--mono)" font-size="11.5" fill="#004b95">enp3s0 &#183; 172.18.8.10</text>
+    <text x="272" y="702" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">replication</text>
+    <text x="272" y="718" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">corosync ring1</text>
+    <text x="272" y="734" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">no gateway</text>
+
+    <rect x="762" y="190" width="452" height="580" rx="4" fill="#ffffff" stroke="#ee0000" stroke-width="2"/>
+    <text x="784" y="220" font-family="var(--display)" font-size="17" fill="#a30000">RHEL 9.8 HOST &#183; node2</text>
+    <text x="784" y="242" font-family="var(--mono)" font-size="12" fill="#6a6e73">172.16.7.11</text>
+
+    <rect x="784" y="258" width="408" height="92" rx="3" fill="#fafafa" stroke="#d2d2d2"/>
+    <text x="800" y="282" font-family="var(--display)" font-size="14.5" fill="#151515">guest &#183; pgsql</text>
+    <text x="800" y="304" font-family="var(--mono)" font-size="12" fill="#4d4d4d">/var/store-b/pgsql.qcow2</text>
+    <text x="800" y="324" font-family="var(--mono)" font-size="11" fill="#6a6e73">ocf:heartbeat:VirtualDomain</text>
+    <text x="800" y="342" font-family="var(--mono)" font-size="11" fill="#795600">store-b is Primary here</text>
+
+    <rect x="784" y="364" width="408" height="60" rx="3" fill="#ffffff" stroke="#0066cc" stroke-width="1.5"/>
+    <text x="800" y="388" font-family="var(--mono)" font-size="12.5" fill="#004b95">XFS on /dev/drbd1 &#8594; /var/store-b</text>
+    <text x="800" y="408" font-family="var(--mono)" font-size="11" fill="#6a6e73">mounted on the Primary side ONLY</text>
+
+    <rect x="784" y="438" width="408" height="84" rx="3" fill="#fafafa" stroke="#f0ab00" stroke-width="1.5"/>
+    <text x="800" y="462" font-family="var(--display)" font-size="14" fill="#795600">DRBD &#183; store-b &#8212; PRIMARY</text>
+    <text x="800" y="484" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">/dev/drbd1 &#8592; lv-store-b &#183; 429 G</text>
+    <text x="800" y="504" font-family="var(--mono)" font-size="11" fill="#6a6e73">store-a here is Secondary &#183; kernel module</text>
+
+    <rect x="784" y="536" width="408" height="112" rx="3" fill="#fafafa" stroke="#d2d2d2"/>
+    <text x="800" y="560" font-family="var(--display)" font-size="14" fill="#151515">LVM &#183; vgstore &#183; 953.87 GB</text>
+    <rect x="800" y="572" width="180" height="42" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="812" y="590" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">lv-store-a</text>
+    <text x="812" y="606" font-family="var(--mono)" font-size="11" fill="#6a6e73">429 G &#183; Secondary</text>
+    <rect x="996" y="572" width="180" height="42" rx="3" fill="#ffffff" stroke="#f0ab00"/>
+    <text x="1008" y="590" font-family="var(--mono)" font-size="11.5" fill="#795600">lv-store-b</text>
+    <text x="1008" y="606" font-family="var(--mono)" font-size="11" fill="#6a6e73">429 G &#183; Primary</text>
+    <text x="800" y="636" font-family="var(--mono)" font-size="11" fill="#6a6e73">NVMe 953 GB &#183; /dev/disk/by-id</text>
+
+    <rect x="784" y="662" width="196" height="82" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="796" y="684" font-family="var(--mono)" font-size="11.5" fill="#151515">enp2s0 &#183; 172.16.7.11</text>
+    <text x="796" y="702" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">management</text>
+    <text x="796" y="718" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">corosync ring0 &#183; br-lan</text>
+    <text x="796" y="734" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">guests attach here</text>
+
+    <rect x="996" y="662" width="196" height="82" rx="3" fill="#ffffff" stroke="#0066cc" stroke-width="1.5"/>
+    <text x="1008" y="684" font-family="var(--mono)" font-size="11.5" fill="#004b95">enp3s0 &#183; 172.18.8.11</text>
+    <text x="1008" y="702" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">replication</text>
+    <text x="1008" y="718" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">corosync ring1</text>
+    <text x="1008" y="734" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">no gateway</text>
+
+    <!-- replication, entirely inside the gap -->
+    <rect x="502" y="436" width="236" height="88" rx="4" fill="#ffffff" stroke="#0066cc" stroke-width="1.5"/>
+    <text x="620" y="462" text-anchor="middle" font-family="var(--display)" font-size="14" fill="#004b95">DRBD protocol C</text>
+    <text x="620" y="482" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">write acked only after</text>
+    <text x="620" y="497" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">BOTH copies have it</text>
+    <text x="620" y="514" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#4d4d4d">synchronous</text>
+    <path d="M496 480 L482 480" stroke="#0066cc" stroke-width="2" marker-end="url(#ar)" fill="none"/>
+    <path d="M744 480 L758 480" stroke="#0066cc" stroke-width="2" marker-end="url(#ar)" fill="none"/>
+
+    <path d="M482 700 L758 700" stroke="#0066cc" stroke-width="1.6" stroke-dasharray="6 4" fill="none"/>
+    <text x="620" y="690" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#004b95">172.18.8.0/24</text>
+    <text x="620" y="722" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">:7788 store-a</text>
+    <text x="620" y="737" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">:7789 store-b</text>
+  </svg>

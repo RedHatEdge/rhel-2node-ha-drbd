@@ -1,0 +1,316 @@
+<title>DRBD on RHEL KVM</title>
+<style>
+  :root{
+    --page:#ffffff; --surface:#fafafa; --surface2:#f0f0f0;
+    --border:#d2d2d2; --border-soft:#ebebeb;
+    --text:#151515; --text2:#4d4d4d; --text3:#6a6e73;
+    --rh-red:#ee0000; --rh-red-dk:#a30000;
+    --pf-blue:#0066cc; --pf-blue-dk:#004b95;
+    --pf-gold:#f0ab00; --pf-gold-dk:#795600;
+    --pf-purple:#5752d1; --pf-purple-dk:#3c3d99;
+    --display:"Red Hat Display","Red Hat Text",system-ui,sans-serif;
+    --body:"Red Hat Text",system-ui,-apple-system,sans-serif;
+    --mono:"Red Hat Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--page); color:var(--text);
+    font-family:var(--body); font-size:16px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1300px;margin:0 auto;padding:0 32px 96px}
+
+  header{border-top:4px solid var(--rh-red);padding:34px 0 26px;margin-bottom:40px;border-bottom:1px solid var(--border)}
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--text3); margin:0 0 12px;
+  }
+  h1{
+    font-family:var(--display); font-weight:500; font-size:clamp(30px,4.2vw,44px);
+    line-height:1.14; margin:0 0 14px; letter-spacing:-.02em; text-wrap:balance;
+  }
+  .lede{margin:0;color:var(--text2);font-size:18px;max-width:64ch;font-weight:300}
+
+  h2{
+    font-family:var(--display); font-weight:500; font-size:26px;
+    margin:60px 0 4px; letter-spacing:-.01em; text-wrap:balance;
+  }
+  h2 + .sub{
+    margin:0 0 22px; color:var(--text3);
+    font-family:var(--mono); font-size:12px; letter-spacing:.05em;
+  }
+  p{margin:0 0 16px}
+  strong{font-weight:600}
+  code{font-family:var(--mono);font-size:.88em;color:var(--pf-blue-dk);background:var(--surface2);padding:1px 5px;border-radius:3px}
+
+  figure{margin:0 0 10px}
+  .figwrap{
+    background:var(--page); border:1px solid var(--border);
+    border-radius:3px; padding:20px; overflow-x:auto;
+  }
+  .figwrap svg{display:block;min-width:960px;width:100%;height:auto}
+  figcaption{margin-top:14px;color:var(--text2);font-size:14px;max-width:80ch;line-height:1.62}
+
+  .notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:0;margin-top:16px}
+  .note{padding:20px 30px 20px 0;border-top:2px solid var(--border-soft)}
+  .note.rhel{border-top-color:var(--rh-red)}
+  .note.svsan{border-top-color:var(--pf-gold)}
+  .note.mirror{border-top-color:var(--pf-blue)}
+  .note.witness{border-top-color:var(--pf-purple)}
+  .note .k{
+    font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--text3);margin:0 0 8px;font-weight:500
+  }
+  .note p{font-size:14.5px;color:var(--text2);margin:0}
+
+  table{border-collapse:collapse;width:100%;font-size:14px;margin:6px 0 0}
+  th,td{text-align:left;padding:10px 18px 10px 0;border-bottom:1px solid var(--border-soft);vertical-align:top}
+  th{
+    font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--text3);font-weight:500;border-bottom:1px solid var(--border)
+  }
+  td.m{font-family:var(--mono);font-size:13px;color:var(--text);font-variant-numeric:tabular-nums}
+  td.m .a{color:var(--pf-blue-dk)}
+  .tablewrap{overflow-x:auto}
+
+  .legend{display:flex;flex-wrap:wrap;gap:18px 30px;margin:22px 0 0;padding:0;list-style:none}
+  .legend li{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text2);font-family:var(--mono)}
+  .sw{width:22px;height:3px;flex:none}
+  .sw.d{height:0;border-top:3px dashed currentColor;width:24px}
+
+  .opts{
+    margin:26px 0 0; padding:0; display:grid;
+    grid-template-columns:max-content 1fr; gap:10px 20px; align-items:baseline;
+    max-width:82ch;
+  }
+  .opts dt{
+    font-family:var(--mono); font-size:12px; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--text3); font-weight:500;
+    border-left:3px solid var(--rh-red); padding-left:10px;
+  }
+  .opts dd{margin:0;font-size:14.5px;color:var(--text2)}
+
+  footer{margin-top:64px;padding-top:22px;border-top:1px solid var(--border);color:var(--text3);font-size:13px}
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Two-node store platform &middot; Option B &mdash; DRBD</p>
+  <h1>DRBD on RHEL KVM</h1>
+  <p class="lede">Two RHEL 9 hosts replicating block devices directly to each other. No appliance in the data path, no shared array, and every component shipped in RHEL.</p>
+  <dl class="opts">
+    <dt>Option A</dt><dd>StorMagic SvSAN &mdash; a virtual storage appliance on each host presenting mirrored iSCSI, which both hosts log into.</dd>
+    <dt>Option B</dt><dd>DRBD &mdash; the RHEL-native alternative. The kernel replicates the block device itself; nothing sits between the guest and the disk. <strong>This diagram.</strong></dd>
+  </dl>
+</header>
+
+<figure>
+  <div class="figwrap">
+  <svg viewBox="0 0 1240 820" role="img" aria-label="Two RHEL 9 hosts replicating two LVM volumes to each other with DRBD protocol C. store-a is Primary on node1 and store-b is Primary on node2, so both hosts carry live workload. A third RHEL host runs corosync-qnetd as the deciding vote.">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+      </marker>
+    </defs>
+
+    <rect x="410" y="16" width="420" height="96" rx="4" fill="#fafafa" stroke="#5752d1" stroke-width="1.5"/>
+    <text x="430" y="42" font-family="var(--mono)" font-size="12" fill="#3c3d99" letter-spacing="1.2">DATACENTER &#183; RHEL 9 ARBITER</text>
+    <text x="430" y="66" font-family="var(--mono)" font-size="14" fill="#151515">qnetd1 &#183; 172.16.7.20</text>
+    <text x="430" y="90" font-family="var(--mono)" font-size="12.5" fill="#4d4d4d">corosync-qnetd :5403 &#8212; the third vote</text>
+    <text x="430" y="105" font-family="var(--mono)" font-size="11" fill="#6a6e73">no storage role &#8212; DRBD needs no appliance, no witness</text>
+
+    <path d="M470 112 L176 190" stroke="#5752d1" stroke-width="1.4" stroke-dasharray="6 4" fill="none"/>
+    <path d="M770 112 L1064 190" stroke="#5752d1" stroke-width="1.4" stroke-dasharray="6 4" fill="none"/>
+    <text x="176" y="160" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#3c3d99">cluster quorum</text>
+    <text x="1064" y="160" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#3c3d99">cluster quorum</text>
+
+    <rect x="26" y="190" width="452" height="580" rx="4" fill="#ffffff" stroke="#ee0000" stroke-width="2"/>
+    <text x="48" y="220" font-family="var(--display)" font-size="17" fill="#a30000">RHEL 9.8 HOST &#183; node1</text>
+    <text x="48" y="242" font-family="var(--mono)" font-size="12" fill="#6a6e73">172.16.7.10</text>
+
+    <rect x="48" y="258" width="408" height="92" rx="3" fill="#fafafa" stroke="#d2d2d2"/>
+    <text x="64" y="282" font-family="var(--display)" font-size="14.5" fill="#151515">guest &#183; pos</text>
+    <text x="64" y="304" font-family="var(--mono)" font-size="12" fill="#4d4d4d">/var/store-a/pos.qcow2</text>
+    <text x="64" y="324" font-family="var(--mono)" font-size="11" fill="#6a6e73">ocf:heartbeat:VirtualDomain</text>
+    <text x="64" y="342" font-family="var(--mono)" font-size="11" fill="#795600">store-a is Primary here</text>
+
+    <rect x="48" y="364" width="408" height="60" rx="3" fill="#ffffff" stroke="#0066cc" stroke-width="1.5"/>
+    <text x="64" y="388" font-family="var(--mono)" font-size="12.5" fill="#004b95">XFS on /dev/drbd0 &#8594; /var/store-a</text>
+    <text x="64" y="408" font-family="var(--mono)" font-size="11" fill="#6a6e73">mounted on the Primary side ONLY</text>
+
+    <rect x="48" y="438" width="408" height="84" rx="3" fill="#fafafa" stroke="#f0ab00" stroke-width="1.5"/>
+    <text x="64" y="462" font-family="var(--display)" font-size="14" fill="#795600">DRBD &#183; store-a &#8212; PRIMARY</text>
+    <text x="64" y="484" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">/dev/drbd0 &#8592; lv-store-a &#183; 429 G</text>
+    <text x="64" y="504" font-family="var(--mono)" font-size="11" fill="#6a6e73">store-b here is Secondary &#183; kernel module</text>
+
+    <rect x="48" y="536" width="408" height="112" rx="3" fill="#fafafa" stroke="#d2d2d2"/>
+    <text x="64" y="560" font-family="var(--display)" font-size="14" fill="#151515">LVM &#183; vgstore &#183; 953.87 GB</text>
+    <rect x="64" y="572" width="180" height="42" rx="3" fill="#ffffff" stroke="#f0ab00"/>
+    <text x="76" y="590" font-family="var(--mono)" font-size="11.5" fill="#795600">lv-store-a</text>
+    <text x="76" y="606" font-family="var(--mono)" font-size="11" fill="#6a6e73">429 G &#183; Primary</text>
+    <rect x="260" y="572" width="180" height="42" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="272" y="590" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">lv-store-b</text>
+    <text x="272" y="606" font-family="var(--mono)" font-size="11" fill="#6a6e73">429 G &#183; Secondary</text>
+    <text x="64" y="636" font-family="var(--mono)" font-size="11" fill="#6a6e73">NVMe 953 GB &#183; /dev/disk/by-id</text>
+
+    <rect x="48" y="662" width="196" height="82" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="60" y="684" font-family="var(--mono)" font-size="11.5" fill="#151515">enp2s0 &#183; 172.16.7.10</text>
+    <text x="60" y="702" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">management</text>
+    <text x="60" y="718" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">corosync ring0 &#183; br-lan</text>
+    <text x="60" y="734" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">guests attach here</text>
+
+    <rect x="260" y="662" width="196" height="82" rx="3" fill="#ffffff" stroke="#0066cc" stroke-width="1.5"/>
+    <text x="272" y="684" font-family="var(--mono)" font-size="11.5" fill="#004b95">enp3s0 &#183; 172.18.8.10</text>
+    <text x="272" y="702" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">replication</text>
+    <text x="272" y="718" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">corosync ring1</text>
+    <text x="272" y="734" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">no gateway</text>
+
+    <rect x="762" y="190" width="452" height="580" rx="4" fill="#ffffff" stroke="#ee0000" stroke-width="2"/>
+    <text x="784" y="220" font-family="var(--display)" font-size="17" fill="#a30000">RHEL 9.8 HOST &#183; node2</text>
+    <text x="784" y="242" font-family="var(--mono)" font-size="12" fill="#6a6e73">172.16.7.11</text>
+
+    <rect x="784" y="258" width="408" height="92" rx="3" fill="#fafafa" stroke="#d2d2d2"/>
+    <text x="800" y="282" font-family="var(--display)" font-size="14.5" fill="#151515">guest &#183; pgsql</text>
+    <text x="800" y="304" font-family="var(--mono)" font-size="12" fill="#4d4d4d">/var/store-b/pgsql.qcow2</text>
+    <text x="800" y="324" font-family="var(--mono)" font-size="11" fill="#6a6e73">ocf:heartbeat:VirtualDomain</text>
+    <text x="800" y="342" font-family="var(--mono)" font-size="11" fill="#795600">store-b is Primary here</text>
+
+    <rect x="784" y="364" width="408" height="60" rx="3" fill="#ffffff" stroke="#0066cc" stroke-width="1.5"/>
+    <text x="800" y="388" font-family="var(--mono)" font-size="12.5" fill="#004b95">XFS on /dev/drbd1 &#8594; /var/store-b</text>
+    <text x="800" y="408" font-family="var(--mono)" font-size="11" fill="#6a6e73">mounted on the Primary side ONLY</text>
+
+    <rect x="784" y="438" width="408" height="84" rx="3" fill="#fafafa" stroke="#f0ab00" stroke-width="1.5"/>
+    <text x="800" y="462" font-family="var(--display)" font-size="14" fill="#795600">DRBD &#183; store-b &#8212; PRIMARY</text>
+    <text x="800" y="484" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">/dev/drbd1 &#8592; lv-store-b &#183; 429 G</text>
+    <text x="800" y="504" font-family="var(--mono)" font-size="11" fill="#6a6e73">store-a here is Secondary &#183; kernel module</text>
+
+    <rect x="784" y="536" width="408" height="112" rx="3" fill="#fafafa" stroke="#d2d2d2"/>
+    <text x="800" y="560" font-family="var(--display)" font-size="14" fill="#151515">LVM &#183; vgstore &#183; 953.87 GB</text>
+    <rect x="800" y="572" width="180" height="42" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="812" y="590" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">lv-store-a</text>
+    <text x="812" y="606" font-family="var(--mono)" font-size="11" fill="#6a6e73">429 G &#183; Secondary</text>
+    <rect x="996" y="572" width="180" height="42" rx="3" fill="#ffffff" stroke="#f0ab00"/>
+    <text x="1008" y="590" font-family="var(--mono)" font-size="11.5" fill="#795600">lv-store-b</text>
+    <text x="1008" y="606" font-family="var(--mono)" font-size="11" fill="#6a6e73">429 G &#183; Primary</text>
+    <text x="800" y="636" font-family="var(--mono)" font-size="11" fill="#6a6e73">NVMe 953 GB &#183; /dev/disk/by-id</text>
+
+    <rect x="784" y="662" width="196" height="82" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="796" y="684" font-family="var(--mono)" font-size="11.5" fill="#151515">enp2s0 &#183; 172.16.7.11</text>
+    <text x="796" y="702" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">management</text>
+    <text x="796" y="718" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">corosync ring0 &#183; br-lan</text>
+    <text x="796" y="734" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">guests attach here</text>
+
+    <rect x="996" y="662" width="196" height="82" rx="3" fill="#ffffff" stroke="#0066cc" stroke-width="1.5"/>
+    <text x="1008" y="684" font-family="var(--mono)" font-size="11.5" fill="#004b95">enp3s0 &#183; 172.18.8.11</text>
+    <text x="1008" y="702" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">replication</text>
+    <text x="1008" y="718" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">corosync ring1</text>
+    <text x="1008" y="734" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">no gateway</text>
+
+    <!-- replication, entirely inside the gap -->
+    <rect x="502" y="436" width="236" height="88" rx="4" fill="#ffffff" stroke="#0066cc" stroke-width="1.5"/>
+    <text x="620" y="462" text-anchor="middle" font-family="var(--display)" font-size="14" fill="#004b95">DRBD protocol C</text>
+    <text x="620" y="482" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">write acked only after</text>
+    <text x="620" y="497" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">BOTH copies have it</text>
+    <text x="620" y="514" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#4d4d4d">synchronous</text>
+    <path d="M496 480 L482 480" stroke="#0066cc" stroke-width="2" marker-end="url(#ar)" fill="none"/>
+    <path d="M744 480 L758 480" stroke="#0066cc" stroke-width="2" marker-end="url(#ar)" fill="none"/>
+
+    <path d="M482 700 L758 700" stroke="#0066cc" stroke-width="1.6" stroke-dasharray="6 4" fill="none"/>
+    <text x="620" y="690" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#004b95">172.18.8.0/24</text>
+    <text x="620" y="722" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">:7788 store-a</text>
+    <text x="620" y="737" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="#6a6e73">:7789 store-b</text>
+  </svg>
+  </div>
+  <figcaption>Each host is Primary for one volume and Secondary for the other, so both carry live workload. Either can take over both if the other fails.</figcaption>
+</figure>
+
+<div class="notes">
+  <div class="note rhel">
+    <p class="k">Nothing between guest and disk</p>
+    <p>DRBD is a kernel module. There is no appliance, no iSCSI, no extra VM to keep alive. Fewer moving parts than any shared-storage design, and every component ships in RHEL.</p>
+  </div>
+  <div class="note mirror">
+    <p class="k">Protocol C means synchronous</p>
+    <p>A write is confirmed to the application only once both nodes hold it. That is what makes zero data loss possible on an unplanned failure, and it is why the replication link must be its own network.</p>
+  </div>
+  <div class="note svsan">
+    <p class="k">Cross-primary, not active/passive</p>
+    <p>store-a is Primary on node1, store-b on node2. Both hosts run production workload; neither is an idle standby. The promotion preference must exceed resource stickiness or the pair silently collapses onto one node while reporting healthy.</p>
+  </div>
+  <div class="note witness">
+    <p class="k">One arbiter, one job</p>
+    <p>The third host runs corosync-qnetd only. Unlike the appliance option there is no separate storage witness to deploy &#8212; DRBD settles ownership itself, using cluster fencing.</p>
+  </div>
+</div>
+
+<h2>Why there is no live migration</h2>
+<p class="lede" style="font-size:16px">The single most important difference between the two options, and it is architectural &#8212; no amount of tuning changes it.</p>
+
+<figure>
+  <div class="figwrap">
+  <svg viewBox="0 0 940 330" role="img" aria-label="With single-primary DRBD the filesystem is mounted on one node at a time, so the migration target cannot open the guest disk and libvirt refuses. With shared storage both hosts have the disk open and live migration succeeds.">
+    <defs>
+      <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+      </marker>
+    </defs>
+
+    <text x="20" y="26" font-family="var(--display)" font-size="14" fill="#a30000">Option B &#183; DRBD single-primary</text>
+    <rect x="20" y="40" width="190" height="120" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="36" y="64" font-family="var(--mono)" font-size="12" fill="#151515">node1</text>
+    <rect x="36" y="76" width="158" height="34" rx="3" fill="#fafafa" stroke="#0066cc"/>
+    <text x="46" y="98" font-family="var(--mono)" font-size="11" fill="#004b95">/var/store-a MOUNTED</text>
+    <text x="36" y="132" font-family="var(--mono)" font-size="11" fill="#4d4d4d">guest disk open here</text>
+    <text x="36" y="150" font-family="var(--mono)" font-size="11" fill="#6a6e73">DRBD Primary</text>
+
+    <rect x="250" y="40" width="190" height="120" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="266" y="64" font-family="var(--mono)" font-size="12" fill="#151515">node2</text>
+    <rect x="266" y="76" width="158" height="34" rx="3" fill="#f0f0f0" stroke="#d2d2d2" stroke-dasharray="4 3"/>
+    <text x="276" y="98" font-family="var(--mono)" font-size="11" fill="#6a6e73">not mounted</text>
+    <text x="266" y="132" font-family="var(--mono)" font-size="11" fill="#6a6e73">cannot open the disk</text>
+    <text x="266" y="150" font-family="var(--mono)" font-size="11" fill="#6a6e73">DRBD Secondary</text>
+
+    <path d="M212 100 L248 100" stroke="#ee0000" stroke-width="2" marker-end="url(#ar2)" fill="none"/>
+    <path d="M218 92 L242 108 M242 92 L218 108" stroke="#ee0000" stroke-width="2.2" fill="none"/>
+
+    <text x="20" y="196" font-family="var(--mono)" font-size="12" fill="#a30000">error: Unsafe migration: Migration without shared storage is unsafe</text>
+    <text x="20" y="218" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">Pacemaker falls back to stop-and-start &#8212; the guest RESTARTS to move.</text>
+    <text x="20" y="238" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">Measured cost of a planned move: about 12 seconds of guest downtime.</text>
+
+    <line x1="470" y1="30" x2="470" y2="300" stroke="#d2d2d2" stroke-width="1"/>
+
+    <text x="500" y="26" font-family="var(--display)" font-size="14" fill="#004b95">Option A &#183; shared LUN, for contrast</text>
+    <rect x="500" y="40" width="190" height="120" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="516" y="64" font-family="var(--mono)" font-size="12" fill="#151515">node1</text>
+    <rect x="516" y="76" width="158" height="34" rx="3" fill="#fafafa" stroke="#0066cc"/>
+    <text x="526" y="98" font-family="var(--mono)" font-size="11" fill="#004b95">LUN open</text>
+    <text x="516" y="132" font-family="var(--mono)" font-size="11" fill="#4d4d4d">guest running</text>
+
+    <rect x="730" y="40" width="190" height="120" rx="3" fill="#ffffff" stroke="#d2d2d2"/>
+    <text x="746" y="64" font-family="var(--mono)" font-size="12" fill="#151515">node2</text>
+    <rect x="746" y="76" width="158" height="34" rx="3" fill="#fafafa" stroke="#0066cc"/>
+    <text x="756" y="98" font-family="var(--mono)" font-size="11" fill="#004b95">SAME LUN open</text>
+    <text x="746" y="132" font-family="var(--mono)" font-size="11" fill="#4d4d4d">ready to receive</text>
+
+    <path d="M692 100 L728 100" stroke="#0066cc" stroke-width="2" marker-end="url(#ar2)" fill="none"/>
+
+    <text x="500" y="196" font-family="var(--mono)" font-size="12" fill="#004b95">live migration succeeds &#8212; the guest never restarts</text>
+    <text x="500" y="218" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">Both hosts have the disk open at the same time, which is what</text>
+    <text x="500" y="238" font-family="var(--mono)" font-size="11.5" fill="#4d4d4d">live migration requires. Measured: about 1.2 seconds.</text>
+
+    <text x="20" y="286" font-family="var(--mono)" font-size="11.5" fill="#6a6e73">Live migration on DRBD would need dual-primary plus a cluster filesystem (GFS2), adding DLM and lvmlockd to every node</text>
+    <text x="20" y="306" font-family="var(--mono)" font-size="11.5" fill="#6a6e73">and making fencing correctness load-bearing rather than merely important. A materially heavier design.</text>
+  </svg>
+  </div>
+  <figcaption>Single-primary DRBD mounts the filesystem on one node at a time, so the target cannot open the guest&#8217;s disk and libvirt refuses the migration outright.</figcaption>
+</figure>
+
+<ul class="legend">
+  <li><span class="sw" style="background:#ee0000"></span> RHEL host boundary</li>
+  <li><span class="sw" style="background:#0066cc"></span> replication / storage path</li>
+  <li><span class="sw" style="background:#f0ab00"></span> DRBD volume</li>
+  <li><span class="sw d" style="color:#5752d1"></span> cluster quorum</li>
+</ul>
+
+</div>
