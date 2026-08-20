@@ -21,20 +21,42 @@ step, and it is resolved by reading the MACs out of firmware rather than from a
 running system.
 
 ```
+0. decide the two networks             on paper, before anything else
 1. accounts and subscriptions          you, on the web
 2. a build host                        one RHEL 9 machine or VM
-3. read the MACs out of BIOS/BMC       no OS needed
-4. write them into bootc/config.toml
+3. read the MACs out of BIOS/BMC       no OS needed — the machines have no OS yet
+4. write MACs and addresses into bootc/config.toml
 5. build the image, then the ISO       on the build host
 6. install both nodes from that ISO
-7. make discover                       now the nodes can describe themselves
-8. make substrate ... onwards          the rest of this guide
+7. fill in the inventory               copy the .example files, edit them
+8. make discover                       the nodes describe their own hardware
+9. the lettered sections below         cluster, storage, guests
 ```
 
-Steps 3 and 7 look similar but are not. Step 3 is you, reading two MACs off a
-screen so the installer can tell the machines apart. Step 7 is the cluster
-recording every disk and interface by an identifier that cannot move — which is
-a different job, done once there is an OS to ask.
+Steps 3 and 8 look similar but are not. Step 3 is you, reading two MACs off a
+screen so the installer can tell the two machines apart. Step 8 is the cluster
+recording every disk and interface by an identifier that cannot move — a
+different job, and only possible once there is an OS to ask.
+
+### 0. Decide the two networks first
+
+| segment | subnet | carries |
+|---|---|---|
+| management | 172.16.7.0/24 (example) | corosync ring0, host and VSA management, witness |
+| storage | 172.18.8.0/24 (example) | corosync ring1, mirror, iSCSI |
+
+Use your own subnets — the examples above are what this was built on, and the
+inventory ships with them as defaults, so reusing them saves editing.
+
+**The storage segment must have no DHCP server, no gateway and no DNS.**
+
+This is not tidiness. A pristine VSA takes DHCP on *every* interface and treats
+each as management. If the storage segment answers DHCP, the appliance acquires a
+second default route, and which one wins is a race. On two identical hosts running
+the identical play, one appliance completed setup and the other could not reach
+the network it needed. The build brings the appliances up on management first for
+that reason; a storage segment handing out leases is also worth avoiding on its
+own merits.
 
 ### 1. Accounts you will need
 
@@ -123,15 +145,51 @@ installs unattended. Nothing to answer.
 If you PXE boot rather than using media: **most BIOSes ship with the network
 stack disabled**, and it has to be turned on before the machine will PXE at all.
 
-### 7. Now let the nodes describe themselves
+### 7. Fill in the inventory
+
+Everything the playbooks need about *your* environment lives in three files. Each
+ships as a `.example` — copy it, then edit. Nothing is generated for you at this
+point except the per-node hardware facts in step 8.
 
 ```
-cp inventory/hosts.yml.example inventory/hosts.yml     # put your addresses in
+cp inventory/hosts.yml.example          inventory/hosts.yml
+cp inventory/group_vars/all.yml.example inventory/group_vars/all.yml
+```
+
+**`inventory/hosts.yml`** — which machines, and how Ansible reaches them. Set
+`ansible_host` for `node1`, `node2` and the arbiter to the management addresses
+you chose in step 0.
+
+**`inventory/group_vars/all.yml`** — everything else, and the one file worth
+reading top to bottom. Anything marked `REPLACE` must change; the rest has a
+working default. The values that matter most:
+
+| | |
+|---|---|
+| `lan_gateway`, `lan_dns` | your management network |
+| `repl_network` | your storage segment |
+| `redfish_user`, `redfish_password` | BMC credentials — fencing does not work without them |
+| `admin_ssh_key` | your public key, or you cannot log in |
+| `admin_password_hash` | needed for Cockpit, which authenticates via PAM |
+| `bootc_image` | where the nodes pull their OS from |
+
+The real `hosts.yml` and `all.yml` are gitignored, so your addresses and
+credentials stay out of version control while the `.example` files remain as the
+template.
+
+You do **not** create `inventory/host_vars/` by hand. The examples there show
+what the files look like, but step 8 generates the real ones from the hardware
+itself, which is more reliable than transcribing MAC addresses.
+
+### 8. Now let the nodes describe themselves
+
+```
 make discover
 ```
 
 This runs against each node and writes `inventory/host_vars/<node>.yml`,
-recording disks by `/dev/disk/by-id/` and interfaces by MAC.
+recording disks by `/dev/disk/by-id/` and interfaces by MAC — overwriting
+anything already there, which is why step 7 says not to write them yourself.
 
 **This is not optional and it is easy to skip**, because the rest of the guide
 does not obviously fail without it — it fails later, on the wrong disk. Kernel
@@ -140,14 +198,19 @@ swap, and interface names shift when firmware changes. Anything written into
 configuration has to be pinned to something that cannot move, and this is the
 step that captures it.
 
-Read the generated files before continuing. If a node picked the wrong disk as
-its storage device, now is the moment to notice — not after it has been
-overwritten.
+Read the generated files before continuing:
 
-### 8. Continue
+```
+cat inventory/host_vars/node1.yml
+```
 
-From here the rest of this guide applies, beginning with the networks section
-below.
+Check `storage_device` is the disk you intend to give to storage and **not** the
+OS disk, and that `control_mac` and `repl_mac` are the right way round. If a node
+picked wrong, correct the file now — not after it has been overwritten.
+
+### 9. Continue
+
+From here, work through the lettered sections below in order.
 
 ---
 
@@ -208,20 +271,7 @@ design, and a dry run tells you which tasks would fire before they do.
 
 ---
 
-## A. Networks
-
-| segment | example subnet | carries |
-|---|---|---|
-| management | 172.16.7.0/24 | corosync ring0, host management, the arbiter |
-| storage | 172.18.8.0/24 | corosync ring1, DRBD replication |
-
-The storage segment needs **no gateway** — replication must not route anywhere.
-
-Two rings matter. corosync uses knet with both links, so losing one network does
-not partition the cluster. Put them on different physical adapters, and if you can,
-different switches.
-
-## B. Install the two nodes
+## A. Install the two nodes
 
 ```
 cd bootc
@@ -242,7 +292,7 @@ Edit the MAC table in `bootc/config.toml` for your hardware first.
 
 If you PXE boot: **Network Stack is disabled by default in most BIOSes.**
 
-## C. Cluster, quorum, fencing
+## B. Cluster, quorum, fencing
 
 ```
 make substrate
@@ -266,7 +316,7 @@ Fencing that has never been exercised is the most common way a two-node cluster
 fails in production. A cluster that cannot fence will, at the worst possible
 moment, decline to recover anything.
 
-## D. Replicated storage
+## C. Replicated storage
 
 ```
 make drbd
@@ -293,7 +343,7 @@ behaviour, not a fault.
 drbdadm status             # UpToDate/UpToDate on both when complete
 ```
 
-## E. Guests
+## D. Guests
 
 ```
 make guests
@@ -337,7 +387,7 @@ for any future move to a shared-storage layer and each fails silently on its own
 - **Ports 49152-49215** open, or migration authenticates, starts, then fails with
   "no route to host"
 
-## F. Verify
+## E. Verify
 
 ```
 pcs status                 # both guests Started, no failed actions

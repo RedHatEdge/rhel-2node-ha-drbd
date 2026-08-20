@@ -1,7 +1,7 @@
 ---
 # Option B — DRBD 9, two resources with opposite primaries.
 #
-#   ansible-playbook playbooks/20-option-b-drbd.yml -e storage_backend=drbd
+#   ansible-playbook playbooks/20-storage-drbd.yml -e storage_backend=drbd
 
 - name: Storage layer — DRBD
   hosts: cluster
