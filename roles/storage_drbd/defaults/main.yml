@@ -27,3 +27,13 @@ drbd_resources:
 
 # Set true only when you intend to destroy existing DRBD metadata.
 drbd_force_recreate: false
+
+# Promotion preference for each DRBD resource's home node.
+#
+# This must EXCEED resource-stickiness, and not just its own: the filesystem and
+# the guest colocated with it contribute their stickiness too. With the usual
+# stickiness of 1000 that is 3000 to beat, so a preference of 100 -- a common
+# starting value -- is outvoted 30:1. The symptom is subtle: after any failover
+# both resources stay on one node, and the cluster reports perfectly healthy
+# while running active/passive.
+drbd_promotion_score: 5000

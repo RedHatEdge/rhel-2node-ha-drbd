@@ -56,14 +56,16 @@
 - name: Order promotion before mount
   ansible.builtin.command: >
     pcs constraint order promote drbd-{{ item.name }}-clone
-    then start fs-{{ item.name }} INFINITY
+    then start fs-{{ item.name }} kind=Mandatory
   loop: "{{ drbd_resources }}"
   loop_control:
     label: "{{ item.name }}"
   delegate_to: "{{ node1_name }}"
   register: _r4
   changed_when: _r4.rc == 0
-  failed_when: _r4.rc not in [0, 1]
+  failed_when:
+    - _r4.rc != 0
+    - "'already exists' not in (_r4.stderr | default('')) | lower"
 
 # This is what makes it active/active rather than active/passive — and the
 # scope matters. A plain `location <clone> prefers <node>` places clone
@@ -75,7 +77,7 @@
 # cluster silently degrades to active/passive while still looking healthy.
 - name: Steer each resource's Primary to its home node
   ansible.builtin.command: >
-    pcs constraint location {{ item.rsc }} rule role=Promoted score=100
+    pcs constraint location {{ item.rsc }} rule role=Promoted score={{ drbd_promotion_score | default(5000) }}
     #uname eq {{ item.node }}
   loop:
     - { rsc: "drbd-store-a-clone", node: "{{ node1_name }}" }
