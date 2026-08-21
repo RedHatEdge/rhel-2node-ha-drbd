@@ -180,8 +180,7 @@ Next:
        cp inventory/hosts.yml.example inventory/hosts.yml
        cp inventory/group_vars/all.yml.example inventory/group_vars/all.yml
        ansible-playbook playbooks/01-discover.yml     # writes host_vars
-  3. ansible-playbook playbooks/00-substrate.yml \
-       -e storage_backend=drbd -e fence_backend=redfish
+  3. ansible-playbook playbooks/00-substrate.yml -e storage_backend=drbd -e fence_backend=redfish
 
 To update a running node later:
        ssh root@<node> 'bootc upgrade && systemctl reboot'
