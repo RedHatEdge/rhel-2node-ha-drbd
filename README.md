@@ -60,15 +60,26 @@ appear in a lot of two-node examples and both trade correctness for convenience.
 ## Build it
 
 ```
-cp inventory/hosts.yml.example              inventory/hosts.yml
-cp inventory/host_vars/node1.yml.example    inventory/host_vars/node1.yml
-cp inventory/host_vars/node2.yml.example    inventory/host_vars/node2.yml
-cp inventory/group_vars/all.yml.example     inventory/group_vars/all.yml
-# work down each one — anything marked REPLACE has to change
+cp inventory/hosts.yml.example           inventory/hosts.yml
+cp inventory/group_vars/all.yml.example  inventory/group_vars/all.yml
+
+# hosts.yml  — the three addresses, matching the MAC table in bootc/config.toml
+# all.yml    — work down it; anything marked REPLACE will not work until changed
+
+make discover       # each node records its own disks and NICs
 make substrate      # cluster, quorum, fencing
+make admin          # admin account and Cockpit on :9090
 make drbd           # replicated volumes under Pacemaker
 make guests         # Ubuntu guests on the replicated storage
 ```
+
+`make discover` comes first for a reason: it pins every disk and interface to an
+identifier that cannot change on reboot. Skip it and the build works until
+something is renumbered, then writes to the wrong disk.
+
+You do **not** create `inventory/host_vars/` by hand — `make discover` generates
+those from the hardware, and hand-written files there are overwritten. The
+`.example` files show the shape only.
 
 Full walkthrough with the reasoning at each step: **[docs/BUILD.md](docs/BUILD.md)**.
 
@@ -91,3 +102,24 @@ They are written to support either DRBD or an appliance-based shared-storage
 layer, and branch on `storage_backend`. This repository pins it to `drbd`, so the
 other branch never fires — that is why the other technology is named in a few
 conditions.
+
+### One key, three places it has to go
+
+You do not need three keys. Create one — `~/.ssh/store-cluster` in Stage 0
+step 4 — and put that same public half in all three places. They are separate
+settings applied at different stages, so each has to be filled in individually:
+
+| where you put it | what it gets you | applied |
+|---|---|---|
+| `bootc/config.toml` | `root` on the nodes, which is how Ansible reaches them | baked into the ISO at build time |
+| `admin_ssh_key` in `all.yml` | the `admin` account, alongside its password | `make admin` |
+| `guest_ssh_key` in `all.yml` | the guests | `make guests` |
+
+Only the first is fixed when the image is built; the other two can be changed
+later by editing `all.yml` and re-running. Different keys work fine if you want
+them, but there is no reason to start that way.
+
+One more key exists that you never touch: Ansible generates a root keypair on
+each node and authorises it on the other, so the nodes can reach each other as
+root. Live migration depends on it. It is created automatically and does not
+belong in any inventory file.
